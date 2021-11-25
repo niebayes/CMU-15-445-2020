@@ -496,19 +496,20 @@ void BPLUSTREE_TYPE::Redistribute(N *neighbor_node, N *node, int index) {
  */
 INDEX_TEMPLATE_ARGUMENTS
 bool BPLUSTREE_TYPE::AdjustRoot(BPlusTreePage *old_root_node) {
+  bool shall_delete_root{false};
   if (!old_root_node->IsLeafPage() && old_root_node->GetSize() == 1) {
     const page_id_t &child_page_id = reinterpret_cast<InternalPage *>(old_root_node)->RemoveAndReturnOnlyChild();
     root_page_id_ = child_page_id;
     UpdateRootPageId(false);
-    return true;
+    shall_delete_root = true;
 
   } else if (old_root_node->IsLeafPage() && old_root_node->GetSize() == 0) {
     root_page_id_ = INVALID_PAGE_ID;
     UpdateRootPageId(false);
-    return true;
+    shall_delete_root = true;
   }
 
-  return false;
+  return shall_delete_root;
 }
 
 /*****************************************************************************
