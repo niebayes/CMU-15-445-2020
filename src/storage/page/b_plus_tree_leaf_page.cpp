@@ -144,9 +144,9 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::MoveHalfTo(BPlusTreeLeafPage *recipient) {
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_LEAF_PAGE_TYPE::CopyNFrom(MappingType *items, int size) {
   for (int i = 0; i < size; ++i) {
-    array_[i] = *items++;
+    array_[GetSize() + i] = *items++;
   }
-  SetSize(size);
+  SetSize(GetSize() + size);
 }
 
 /*****************************************************************************

@@ -157,7 +157,7 @@ N *BPLUSTREE_TYPE::Split(N *node) {
   }
 
   N *split_node = reinterpret_cast<N *>(page->GetData());
-  split_node->Init(page_id, node->GetParentPageId(), node->GetMaxSize());
+  split_node->Init(page_id, node->GetParentPageId(), (node->IsLeafPage() ? leaf_max_size_ : internal_max_size_));
 
   if (node->IsLeafPage()) {
     LeafPage *leaf_node = reinterpret_cast<LeafPage *>(node);
@@ -471,7 +471,7 @@ void BPLUSTREE_TYPE::Redistribute(N *neighbor_node, N *node, int index) {
     const KeyType mid_key = parent->KeyAt(node_index + (index == NODE_IS_LEFT));
 
     if (index == NODE_IS_LEFT) {
-      parent->SetKeyAt(node_index + 1, neighbor_internal_node->KeyAt(0));
+      parent->SetKeyAt(node_index + 1, neighbor_internal_node->KeyAt(1));
       neighbor_internal_node->MoveFirstToEndOf(internal_node, mid_key, buffer_pool_manager_);
     } else {
       parent->SetKeyAt(node_index, neighbor_internal_node->KeyAt(neighbor_internal_node->GetSize() - 1));
@@ -501,6 +501,14 @@ bool BPLUSTREE_TYPE::AdjustRoot(BPlusTreePage *old_root_node) {
     const page_id_t &child_page_id = reinterpret_cast<InternalPage *>(old_root_node)->RemoveAndReturnOnlyChild();
     root_page_id_ = child_page_id;
     UpdateRootPageId(false);
+
+    Page *page = buffer_pool_manager_->FetchPage(child_page_id);
+    if (page == nullptr) {
+      THROW_OOM("FetchPage fail");
+    }
+    reinterpret_cast<BPlusTreePage *>(page->GetData())->SetParentPageId(INVALID_PAGE_ID);
+    buffer_pool_manager_->UnpinPage(child_page_id, true);
+
     shall_delete_root = true;
 
   } else if (old_root_node->IsLeafPage() && old_root_node->GetSize() == 0) {

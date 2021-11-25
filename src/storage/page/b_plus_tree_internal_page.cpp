@@ -166,9 +166,9 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::CopyNFrom(MappingType *items, int size, Buf
     }
     reinterpret_cast<BPlusTreePage *>(page->GetData())->SetParentPageId(GetPageId());
     buffer_pool_manager->UnpinPage(items->second, true);
-    array_[i] = *items++;
+    array_[GetSize() + i] = *items++;
   }
-  SetSize(size);
+  SetSize(GetSize() + size);
 }
 
 /*****************************************************************************
@@ -214,7 +214,7 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::MoveAllTo(BPlusTreeInternalPage *recipient,
   const int old_size = recipient->GetSize();
   MappingType *items = array_;
   recipient->CopyNFrom(items, GetSize(), buffer_pool_manager);
-  recipient->SetKeyAt(old_size - 1, middle_key);
+  recipient->SetKeyAt(old_size, middle_key);
   SetSize(0);
 }
 
@@ -244,7 +244,7 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::MoveFirstToEndOf(BPlusTreeInternalPage *rec
  */
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_INTERNAL_PAGE_TYPE::CopyLastFrom(const MappingType &item, BufferPoolManager *buffer_pool_manager) {
-  array_[GetSize() - 1] = item;
+  array_[GetSize()] = item;
   SetSize(GetSize() + 1);
 
   Page *page = buffer_pool_manager->FetchPage(item.second);
@@ -280,8 +280,8 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::CopyFirstFrom(const MappingType &item, Buff
   for (int i = GetSize(); i > 1; --i) {
     array_[i] = array_[i - 1];
   }
-  array_[0].first = item.first;
-  array_[1].second = item.second;
+  array_[0].second = item.second;
+  SetKeyAt(1, item.first);
   SetSize(GetSize() + 1);
 
   Page *page = buffer_pool_manager->FetchPage(item.second);
