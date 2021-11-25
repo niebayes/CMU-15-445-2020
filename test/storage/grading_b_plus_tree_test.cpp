@@ -13,7 +13,7 @@
 #include "index/b_plus_tree.h"
 #include "vtable/virtual_table.h"
 
-namespace cmudb { 
+namespace cmudb {
 
 TEST(BPlusTreeTests, SplitTest) {
   LOG_DEBUG("current page size is 96 bytes");

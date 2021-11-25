@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cd /home/lzx/bustub/build
+cd /home/lzx/bustub_backup/bustub/build
 
 # format tests.
 make format -j8
