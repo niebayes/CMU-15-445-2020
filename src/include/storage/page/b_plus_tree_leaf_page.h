@@ -48,6 +48,7 @@ class BPlusTreeLeafPage : public BPlusTreePage {
   // helper methods
   page_id_t GetNextPageId() const;
   void SetNextPageId(page_id_t next_page_id);
+  int LowerBound(const KeyType &key, const KeyComparator &comparator) const;
   KeyType KeyAt(int index) const;
   int KeyIndex(const KeyType &key, const KeyComparator &comparator) const;
   const MappingType &GetItem(int index);
@@ -68,6 +69,6 @@ class BPlusTreeLeafPage : public BPlusTreePage {
   void CopyLastFrom(const MappingType &item);
   void CopyFirstFrom(const MappingType &item);
   page_id_t next_page_id_;
-  MappingType array[0];
+  MappingType array_[0];
 };
 }  // namespace bustub

@@ -22,22 +22,24 @@ namespace bustub {
 INDEX_TEMPLATE_ARGUMENTS
 class IndexIterator {
  public:
-  // you may define your own constructor based on your member variables
-  IndexIterator();
+  explicit IndexIterator(B_PLUS_TREE_LEAF_PAGE_TYPE *leaf_page, int index, BufferPoolManager *bpm, bool is_end = false);
   ~IndexIterator();
 
-  bool isEnd();
+  bool isEnd() const;
 
-  const MappingType &operator*();
+  const MappingType &operator*() const;
 
   IndexIterator &operator++();
 
-  bool operator==(const IndexIterator &itr) const { throw std::runtime_error("unimplemented"); }
+  bool operator==(const IndexIterator &other) const;
 
-  bool operator!=(const IndexIterator &itr) const { throw std::runtime_error("unimplemented"); }
+  bool operator!=(const IndexIterator &other) const;
 
  private:
-  // add your own private member variables here
+  B_PLUS_TREE_LEAF_PAGE_TYPE *leaf_page_{nullptr};
+  int index_{0};
+  BufferPoolManager *bpm_{nullptr};
+  bool is_end_;
 };
 
 }  // namespace bustub

@@ -43,6 +43,7 @@ class BPlusTreeInternalPage : public BPlusTreePage {
   int ValueIndex(const ValueType &value) const;
   ValueType ValueAt(int index) const;
 
+  int LowerBound(const KeyType &key, const KeyComparator &comparator) const;
   ValueType Lookup(const KeyType &key, const KeyComparator &comparator) const;
   void PopulateNewRoot(const ValueType &old_value, const KeyType &new_key, const ValueType &new_value);
   int InsertNodeAfter(const ValueType &old_value, const KeyType &new_key, const ValueType &new_value);
@@ -59,8 +60,8 @@ class BPlusTreeInternalPage : public BPlusTreePage {
 
  private:
   void CopyNFrom(MappingType *items, int size, BufferPoolManager *buffer_pool_manager);
-  void CopyLastFrom(const MappingType &pair, BufferPoolManager *buffer_pool_manager);
-  void CopyFirstFrom(const MappingType &pair, BufferPoolManager *buffer_pool_manager);
-  MappingType array[0];
+  void CopyLastFrom(const MappingType &item, BufferPoolManager *buffer_pool_manager);
+  void CopyFirstFrom(const MappingType &item, BufferPoolManager *buffer_pool_manager);
+  MappingType array_[0];
 };
 }  // namespace bustub
