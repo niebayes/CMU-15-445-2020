@@ -15,7 +15,7 @@
 namespace bustub {
 // helper function to launch multiple threads
 template <typename... Args>
-void LaunchParallelTest(uint64_t num_threads, Args &&... args) {
+void LaunchParallelTest(uint64_t num_threads, Args &&...args) {
   std::vector<std::thread> thread_group;
 
   // Launch a group of threads
@@ -92,7 +92,8 @@ void DeleteHelperSplit(BPlusTree<GenericKey<8>, RID, GenericComparator<8>> *tree
   delete transaction;
 }
 
-TEST(BPlusTreeConcurrentTest, DISABLED_InsertTest1) {
+// TEST(BPlusTreeConcurrentTest, DISABLED_InsertTest1) {
+TEST(BPlusTreeConcurrentTest, InsertTest1) {
   // create KeyComparator and index schema
   Schema *key_schema = ParseCreateStatement("a bigint");
   GenericComparator<8> comparator(key_schema);
@@ -100,7 +101,7 @@ TEST(BPlusTreeConcurrentTest, DISABLED_InsertTest1) {
   DiskManager *disk_manager = new DiskManager("test.db");
   BufferPoolManager *bpm = new BufferPoolManager(50, disk_manager);
   // create b+ tree
-  BPlusTree<GenericKey<8>, RID, GenericComparator<8>> tree("foo_pk", bpm, comparator);
+  BPlusTree<GenericKey<8>, RID, GenericComparator<8>> tree("foo_pk", bpm, comparator, 2, 3);
   // create and fetch header_page
   page_id_t page_id;
   auto header_page = bpm->NewPage(&page_id);
@@ -146,6 +147,7 @@ TEST(BPlusTreeConcurrentTest, DISABLED_InsertTest1) {
 }
 
 TEST(BPlusTreeConcurrentTest, DISABLED_InsertTest2) {
+// TEST(BPlusTreeConcurrentTest, InsertTest2) {
   // create KeyComparator and index schema
   Schema *key_schema = ParseCreateStatement("a bigint");
   GenericComparator<8> comparator(key_schema);

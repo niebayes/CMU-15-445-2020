@@ -600,6 +600,82 @@ Page *BPLUSTREE_TYPE::FindLeafPage(const KeyType &key, bool left_most) {
   return leaf_page;
 }
 
+void LatchPage(Page *page, const OP_TYPE &op_type) {
+  if (op_type == OP_TYPE::READ) {
+    page->RLatch();
+  } else {
+    page->WLatch();
+  }
+}
+
+void UnlatchPage(Page *page, const OP_TYPE &op_type) {
+  if (op_type == OP_TYPE::READ) {
+    page->RUnlatch();
+  } else {
+    page->WUnlatch();
+  }
+}
+
+bool IsNodeSafe(BPlusTreePage *node, const OP_TYPE &op_type) {
+  bool is_safe{true};
+  if (op_type == OP_TYPE::INSERT) {
+    is_safe = node->GetSize() < node->GetMaxSize() - 1;
+  } else if (op_type == OP_TYPE::DELETE) {
+    is_safe = node->GetSize() > node->GetMinSize();
+  }
+  return is_safe;
+}
+
+void ReleaseAllPages(Transaction *transaction, BufferPoolManager *buffer_pool_manager, const OP_TYPE &op_type) {
+  auto page_set = transaction->GetPageSet();
+  for (Page *page : *page_set) {
+    UnlatchPage(page, op_type);
+    buffer_pool_manager->UnpinPage(page->GetPageId(), op_type != OP_TYPE::READ);
+  }
+  page_set->clear();
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+Page *BPLUSTREE_TYPE::FindLeafPageCrabbing(const KeyType &key, Transaction *transaction, const OP_TYPE &op_type) {
+  Page *page = buffer_pool_manager_->FetchPage(root_page_id_);
+  if (page == nullptr) {
+    THROW_OOM("FetchPage fail");
+  }
+
+  LatchPage(page, op_type);
+  if (op_type == OP_TYPE::READ) {
+    root_latch_.lock_shared();
+  } else {
+    root_latch_.lock();
+    transaction->AddIntoPageSet(page);
+  }
+
+  BPlusTreePage *node = reinterpret_cast<BPlusTreePage *>(page->GetData());
+  while (!node->IsLeafPage()) {
+    const page_id_t child_page_id = reinterpret_cast<InternalPage *>(node)->Lookup(key, comparator_);
+    Page *child_page = buffer_pool_manager_->FetchPage(child_page_id);
+    if (child_page == nullptr) {
+      THROW_OOM("FetchPage fail");
+    }
+    node = reinterpret_cast<BPlusTreePage *>(child_page->GetData());
+
+    LatchPage(child_page, op_type);
+    if (op_type == OP_TYPE::READ) {
+      UnlatchPage(page, op_type);
+      root_latch_.unlock_shared();
+    } else {
+      if (IsNodeSafe(node, op_type)) {
+        ReleaseAllPages(transaction, buffer_pool_manager_);
+        root_latch_.unlock();
+      }
+      transaction->AddIntoPageSet(child_page);
+    }
+
+    page = child_page;
+  }
+  return page;
+}
+
 /*
  * Update/Insert root page id in header page(where page_id = 0, header_page is
  * defined under include/page/header_page.h)

@@ -11,6 +11,7 @@
 #pragma once
 
 #include <queue>
+#include <shared_mutex>
 #include <string>
 #include <vector>
 
@@ -22,6 +23,8 @@
 namespace bustub {
 
 #define BPLUSTREE_TYPE BPlusTree<KeyType, ValueType, KeyComparator>
+
+enum class OP_TYPE { READ, INSERT, DELETE };
 
 /**
  * Main class providing the API for the Interactive B+ Tree.
@@ -101,6 +104,8 @@ class BPlusTree {
 
   bool AdjustRoot(BPlusTreePage *node);
 
+  Page *FindLeafPageCrabbing(const KeyType &key, Transaction *transaction, const OP_TYPE &op_type);
+
   void UpdateRootPageId(int insert_record = 0);
 
   /* Debug Routines for FREE!! */
@@ -115,6 +120,7 @@ class BPlusTree {
   KeyComparator comparator_;
   int leaf_max_size_;
   int internal_max_size_;
+  mutable std::shared_mutex root_latch_;
 };
 
 }  // namespace bustub
