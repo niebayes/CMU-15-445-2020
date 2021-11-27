@@ -1,0 +1,2 @@
+弹性数组：https://www.pengrl.com/p/20013/
+array_[0] or *array_
