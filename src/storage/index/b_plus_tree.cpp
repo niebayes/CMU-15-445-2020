@@ -22,6 +22,33 @@
 #define NODE_IS_RIGHT 1
 
 namespace bustub {
+
+void LatchPage(Page *page, const OP_TYPE &op_type) {
+  if (op_type == OP_TYPE::READ) {
+    page->RLatch();
+  } else {
+    page->WLatch();
+  }
+}
+
+void UnlatchPage(Page *page, const OP_TYPE &op_type) {
+  if (op_type == OP_TYPE::READ) {
+    page->RUnlatch();
+  } else {
+    page->WUnlatch();
+  }
+}
+
+bool IsNodeSafe(BPlusTreePage *node, const OP_TYPE &op_type) {
+  bool is_safe{true};
+  if (op_type == OP_TYPE::INSERT) {
+    is_safe = (node->GetSize() < node->GetMaxSize() - 1);
+  } else if (op_type == OP_TYPE::DELETE) {
+    is_safe = (node->GetSize() > node->GetMinSize());
+  }
+  return is_safe;
+}
+
 INDEX_TEMPLATE_ARGUMENTS
 BPLUSTREE_TYPE::BPlusTree(std::string name, BufferPoolManager *buffer_pool_manager, const KeyComparator &comparator,
                           int leaf_max_size, int internal_max_size)
@@ -51,17 +78,22 @@ bool BPLUSTREE_TYPE::IsEmpty() const { return root_page_id_ == INVALID_PAGE_ID; 
  */
 INDEX_TEMPLATE_ARGUMENTS
 bool BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result, Transaction *transaction) {
+  LatchRoot(OP_TYPE::READ);
   if (IsEmpty()) {
+    TryUnlatchRoot(OP_TYPE::READ);
     return false;
   }
+  TryUnlatchRoot(OP_TYPE::READ);
 
-  Page *page = FindLeafPage(key);
+  Page *page = FindLeafPageCrabbing(key, transaction, OP_TYPE::READ);
   LeafPage *leaf_page = reinterpret_cast<LeafPage *>(page->GetData());
 
   ValueType value;
   const bool key_exist = leaf_page->Lookup(key, &value, comparator_);
 
-  buffer_pool_manager_->UnpinPage(leaf_page->GetPageId(), false);
+  TryUnlatchRoot(OP_TYPE::READ);
+  UnlatchPage(page, OP_TYPE::READ);
+  buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
 
   if (key_exist) {
     result->clear();
@@ -603,32 +635,6 @@ Page *BPLUSTREE_TYPE::FindLeafPage(const KeyType &key, bool left_most) {
   return leaf_page;
 }
 
-void LatchPage(Page *page, const OP_TYPE &op_type) {
-  if (op_type == OP_TYPE::READ) {
-    page->RLatch();
-  } else {
-    page->WLatch();
-  }
-}
-
-void UnlatchPage(Page *page, const OP_TYPE &op_type) {
-  if (op_type == OP_TYPE::READ) {
-    page->RUnlatch();
-  } else {
-    page->WUnlatch();
-  }
-}
-
-bool IsNodeSafe(BPlusTreePage *node, const OP_TYPE &op_type) {
-  bool is_safe{true};
-  if (op_type == OP_TYPE::INSERT) {
-    is_safe = (node->GetSize() < node->GetMaxSize() - 1);
-  } else if (op_type == OP_TYPE::DELETE) {
-    is_safe = (node->GetSize() > node->GetMinSize());
-  }
-  return is_safe;
-}
-
 INDEX_TEMPLATE_ARGUMENTS
 void BPLUSTREE_TYPE::LatchRoot(const OP_TYPE &op_type) {
   if (op_type == OP_TYPE::READ) {
@@ -705,6 +711,7 @@ Page *BPLUSTREE_TYPE::FindLeafPageCrabbing(const KeyType &key, Transaction *tran
     if (op_type == OP_TYPE::READ) {
       TryUnlatchRoot(op_type);
       UnlatchPage(page, op_type);
+      buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
     } else {
       if (IsNodeSafe(node, op_type)) {
         TryUnlatchRoot(op_type);

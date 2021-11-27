@@ -125,7 +125,6 @@ class BPlusTree {
   int leaf_max_size_;
   int internal_max_size_;
   // reader-writer latch.
-  // TODO(bayes): Make them a RecursiveSharedMutex class.
   mutable std::shared_mutex root_latch_;
   static thread_local uint32_t root_latch_cnt_;
 };

@@ -409,7 +409,7 @@ TEST(BPlusTreeTests, ScaleTest) {
   DiskManager *disk_manager = new DiskManager("test.db");
   BufferPoolManager *bpm = new BufferPoolManager(30, disk_manager);
   // create b+ tree
-  BPlusTree<GenericKey<8>, RID, GenericComparator<8>> tree("foo_pk", bpm, comparator);
+  BPlusTree<GenericKey<8>, RID, GenericComparator<8>> tree("foo_pk", bpm, comparator, 2, 3);
   GenericKey<8> index_key;
   RID rid;
   // create transaction
