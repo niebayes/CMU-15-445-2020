@@ -104,6 +104,10 @@ class BPlusTree {
 
   bool AdjustRoot(BPlusTreePage *node);
 
+  void LatchRoot(const OP_TYPE &op_type);
+  void TryUnlatchRoot(const OP_TYPE &op_type);
+  void ReleaseAllPages(Transaction *transaction, const OP_TYPE &op_type);
+  void FreeAllPages(Transaction *transaction, const OP_TYPE &op_type);
   Page *FindLeafPageCrabbing(const KeyType &key, Transaction *transaction, const OP_TYPE &op_type);
 
   void UpdateRootPageId(int insert_record = 0);
@@ -120,7 +124,10 @@ class BPlusTree {
   KeyComparator comparator_;
   int leaf_max_size_;
   int internal_max_size_;
+  // reader-writer latch.
+  // TODO(bayes): Make them a RecursiveSharedMutex class.
   mutable std::shared_mutex root_latch_;
+  static thread_local uint32_t root_latch_cnt_;
 };
 
 }  // namespace bustub

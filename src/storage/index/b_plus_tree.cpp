@@ -32,6 +32,9 @@ BPLUSTREE_TYPE::BPlusTree(std::string name, BufferPoolManager *buffer_pool_manag
       leaf_max_size_(leaf_max_size),
       internal_max_size_(internal_max_size) {}
 
+INDEX_TEMPLATE_ARGUMENTS
+thread_local uint32_t BPLUSTREE_TYPE::root_latch_cnt_ = 0;
+
 /*
  * Helper function to decide whether current b+tree is empty
  */
@@ -619,34 +622,73 @@ void UnlatchPage(Page *page, const OP_TYPE &op_type) {
 bool IsNodeSafe(BPlusTreePage *node, const OP_TYPE &op_type) {
   bool is_safe{true};
   if (op_type == OP_TYPE::INSERT) {
-    is_safe = node->GetSize() < node->GetMaxSize() - 1;
+    is_safe = (node->GetSize() < node->GetMaxSize() - 1);
   } else if (op_type == OP_TYPE::DELETE) {
-    is_safe = node->GetSize() > node->GetMinSize();
+    is_safe = (node->GetSize() > node->GetMinSize());
   }
   return is_safe;
 }
 
-void ReleaseAllPages(Transaction *transaction, BufferPoolManager *buffer_pool_manager, const OP_TYPE &op_type) {
+INDEX_TEMPLATE_ARGUMENTS
+void BPLUSTREE_TYPE::LatchRoot(const OP_TYPE &op_type) {
+  if (op_type == OP_TYPE::READ) {
+    root_latch_.lock_shared();
+  } else {
+    root_latch_.lock();
+  }
+  ++root_latch_cnt_;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void BPLUSTREE_TYPE::TryUnlatchRoot(const OP_TYPE &op_type) {
+  if (root_latch_cnt_ > 0) {
+    if (op_type == OP_TYPE::READ) {
+      root_latch_.unlock_shared();
+    } else {
+      root_latch_.unlock();
+    }
+    --root_latch_cnt_;
+  }
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void BPLUSTREE_TYPE::ReleaseAllPages(Transaction *transaction, const OP_TYPE &op_type) {
   auto page_set = transaction->GetPageSet();
   for (Page *page : *page_set) {
     UnlatchPage(page, op_type);
-    buffer_pool_manager->UnpinPage(page->GetPageId(), op_type != OP_TYPE::READ);
+    buffer_pool_manager_->UnpinPage(page->GetPageId(), op_type != OP_TYPE::READ);
   }
   page_set->clear();
 }
 
 INDEX_TEMPLATE_ARGUMENTS
+void BPLUSTREE_TYPE::FreeAllPages(Transaction *transaction, const OP_TYPE &op_type) {
+  auto page_set = transaction->GetPageSet();
+  auto deleted_page_set = transaction->GetDeletedPageSet();
+  for (Page *page : *page_set) {
+    UnlatchPage(page, op_type);
+    const page_id_t &page_id = page->GetPageId();
+    buffer_pool_manager_->UnpinPage(page_id, op_type != OP_TYPE::READ);
+    if (deleted_page_set->count(page_id) > 0) {
+      buffer_pool_manager_->DeletePage(page_id);
+      deleted_page_set->erase(page_id);
+    }
+  }
+  page_set->clear();
+  assert(deleted_page_set->empty());
+}
+
+INDEX_TEMPLATE_ARGUMENTS
 Page *BPLUSTREE_TYPE::FindLeafPageCrabbing(const KeyType &key, Transaction *transaction, const OP_TYPE &op_type) {
+  LatchRoot(op_type);
+
   Page *page = buffer_pool_manager_->FetchPage(root_page_id_);
   if (page == nullptr) {
     THROW_OOM("FetchPage fail");
   }
 
   LatchPage(page, op_type);
-  if (op_type == OP_TYPE::READ) {
-    root_latch_.lock_shared();
-  } else {
-    root_latch_.lock();
+  if (op_type != OP_TYPE::READ) {
     transaction->AddIntoPageSet(page);
   }
 
@@ -661,12 +703,12 @@ Page *BPLUSTREE_TYPE::FindLeafPageCrabbing(const KeyType &key, Transaction *tran
 
     LatchPage(child_page, op_type);
     if (op_type == OP_TYPE::READ) {
+      TryUnlatchRoot(op_type);
       UnlatchPage(page, op_type);
-      root_latch_.unlock_shared();
     } else {
       if (IsNodeSafe(node, op_type)) {
-        ReleaseAllPages(transaction, buffer_pool_manager_);
-        root_latch_.unlock();
+        TryUnlatchRoot(op_type);
+        ReleaseAllPages(transaction, op_type);
       }
       transaction->AddIntoPageSet(child_page);
     }
