@@ -287,24 +287,16 @@ void BPLUSTREE_TYPE::InsertIntoParent(BPlusTreePage *old_node, const KeyType &ke
  */
 INDEX_TEMPLATE_ARGUMENTS
 void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
-  LatchRoot(OP_TYPE::DELETE);
-  if (IsEmpty()) {
-    TryUnlatchRoot(OP_TYPE::DELETE);
+  Page *page = FindLeafPageCrabbing(key, transaction, OP_TYPE::DELETE);
+  if (page == nullptr) {
     return;
   }
-  TryUnlatchRoot(OP_TYPE::DELETE);
-
-  Page *page = FindLeafPageCrabbing(key, transaction, OP_TYPE::DELETE);
   LeafPage *leaf_page = reinterpret_cast<LeafPage *>(page->GetData());
 
   const int size = leaf_page->RemoveAndDeleteRecord(key, comparator_);
 
   if (size < leaf_page->GetMinSize()) {
-    const bool shall_delete_leaf = CoalesceOrRedistribute(leaf_page, transaction);
-
-    if (shall_delete_leaf) {
-      transaction->AddIntoDeletedPageSet(page->GetPageId());
-    }
+    CoalesceOrRedistribute(leaf_page, transaction);
   }
 
   TryUnlatchRoot(OP_TYPE::DELETE);
@@ -323,10 +315,10 @@ template <typename N>
 bool BPLUSTREE_TYPE::CoalesceOrRedistribute(N *node, Transaction *transaction) {
   if (node->IsRootPage()) {
     const bool shall_delete_root = AdjustRoot(node);
-    if (shall_delete_root && !node->IsLeafPage()) {
+    if (shall_delete_root) {
       transaction->AddIntoDeletedPageSet(node->GetPageId());
     }
-    return shall_delete_root && node->IsLeafPage();
+    return false;
   }
 
   Page *page = buffer_pool_manager_->FetchPage(node->GetParentPageId());
@@ -374,7 +366,7 @@ bool BPLUSTREE_TYPE::CoalesceOrRedistribute(N *node, Transaction *transaction) {
     if (node->GetSize() + left_sibling_node->GetSize() < node->GetMaxSize()) {
       Coalesce(&left_sibling_node, &node, &parent_page, NODE_IS_RIGHT, transaction);
       buffer_pool_manager_->UnpinPage(parent_page->GetPageId(), true);
-      return node->IsLeafPage();
+      return false;
     }
   }
 
@@ -444,10 +436,7 @@ bool BPLUSTREE_TYPE::Coalesce(N **neighbor_node_, N **node_, InternalPage **pare
 
   parent->Remove(node_index);
   if (parent->GetSize() < parent->GetMinSize()) {
-    const bool shall_delete_parent = CoalesceOrRedistribute(parent, transaction);
-    if (shall_delete_parent) {
-      transaction->AddIntoDeletedPageSet(parent->GetPageId());
-    }
+    return CoalesceOrRedistribute(parent, transaction);
   }
 
   return false;
