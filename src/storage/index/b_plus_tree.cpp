@@ -115,10 +115,15 @@ bool BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result
  */
 INDEX_TEMPLATE_ARGUMENTS
 bool BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transaction *transaction) {
+  LatchRoot(OP_TYPE::INSERT);
   if (IsEmpty()) {
     StartNewTree(key, value);
+
+    TryUnlatchRoot(OP_TYPE::INSERT);
     return true;
   }
+  TryUnlatchRoot(OP_TYPE::INSERT);
+
   return InsertIntoLeaf(key, value, transaction);
 }
 /*
@@ -155,7 +160,7 @@ void BPLUSTREE_TYPE::StartNewTree(const KeyType &key, const ValueType &value) {
  */
 INDEX_TEMPLATE_ARGUMENTS
 bool BPLUSTREE_TYPE::InsertIntoLeaf(const KeyType &key, const ValueType &value, Transaction *transaction) {
-  Page *page = FindLeafPage(key);
+  Page *page = FindLeafPageCrabbing(key, transaction, OP_TYPE::INSERT);
   LeafPage *leaf_page = reinterpret_cast<LeafPage *>(page->GetData());
 
   const int old_size = leaf_page->GetSize();
@@ -167,10 +172,13 @@ bool BPLUSTREE_TYPE::InsertIntoLeaf(const KeyType &key, const ValueType &value, 
 
     const KeyType &mid_key = split_leaf_page->KeyAt(0);
     InsertIntoParent(leaf_page, mid_key, split_leaf_page);
-
-  } else {
-    buffer_pool_manager_->UnpinPage(leaf_page->GetPageId(), is_dirty);
   }
+  // else {
+  //   buffer_pool_manager_->UnpinPage(leaf_page->GetPageId(), is_dirty);
+  // }
+
+  TryUnlatchRoot(OP_TYPE::INSERT);
+  ReleaseAllPages(transaction, OP_TYPE::INSERT);
 
   return is_dirty;
 }
@@ -242,7 +250,7 @@ void BPLUSTREE_TYPE::InsertIntoParent(BPlusTreePage *old_node, const KeyType &ke
     old_node->SetParentPageId(page_id);
     new_node->SetParentPageId(page_id);
 
-    buffer_pool_manager_->UnpinPage(old_node->GetPageId(), true);
+    // buffer_pool_manager_->UnpinPage(old_node->GetPageId(), true);
     buffer_pool_manager_->UnpinPage(new_node->GetPageId(), true);
     buffer_pool_manager_->UnpinPage(page_id, true);
 
@@ -257,7 +265,7 @@ void BPLUSTREE_TYPE::InsertIntoParent(BPlusTreePage *old_node, const KeyType &ke
 
   const int size = parent_page->InsertNodeAfter(old_node->GetPageId(), key, new_node->GetPageId());
 
-  buffer_pool_manager_->UnpinPage(old_node->GetPageId(), true);
+  // buffer_pool_manager_->UnpinPage(old_node->GetPageId(), true);
   buffer_pool_manager_->UnpinPage(new_node->GetPageId(), true);
 
   if (size == parent_page->GetMaxSize()) {
@@ -265,10 +273,9 @@ void BPLUSTREE_TYPE::InsertIntoParent(BPlusTreePage *old_node, const KeyType &ke
 
     const KeyType &mid_key = split_page->KeyAt(0);
     InsertIntoParent(parent_page, mid_key, split_page);
-
-  } else {
-    buffer_pool_manager_->UnpinPage(parent_page->GetPageId(), true);
   }
+
+  buffer_pool_manager_->UnpinPage(parent_page->GetPageId(), true);
 }
 
 /*****************************************************************************

@@ -28,7 +28,8 @@ void print_tree(const BPlusTree<GenericKey<8>, RID, GenericComparator<8>> &tree,
   bpm->UnpinPage(tree.root_page_id_, false);
 }
 
-TEST(BPlusTreeTests, InsertDeleteTest) {
+TEST(BPlusTreeTests, DISABLED_InsertDeleteTest) {
+  // TEST(BPlusTreeTests, InsertDeleteTest) {
   // create KeyComparator and index schema
   Schema *key_schema = ParseCreateStatement("a bigint");
   GenericComparator<8> comparator(key_schema);
