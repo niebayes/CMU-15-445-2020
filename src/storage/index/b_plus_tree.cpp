@@ -178,7 +178,7 @@ bool BPLUSTREE_TYPE::InsertIntoLeaf(const KeyType &key, const ValueType &value, 
   // }
 
   TryUnlatchRoot(OP_TYPE::INSERT);
-  ReleaseAllPages(transaction, OP_TYPE::INSERT);
+  ReleaseAllPages(transaction);
 
   return is_dirty;
 }
@@ -290,27 +290,28 @@ void BPLUSTREE_TYPE::InsertIntoParent(BPlusTreePage *old_node, const KeyType &ke
  */
 INDEX_TEMPLATE_ARGUMENTS
 void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
+  LatchRoot(OP_TYPE::DELETE);
   if (IsEmpty()) {
+    TryUnlatchRoot(OP_TYPE::DELETE);
     return;
   }
+  TryUnlatchRoot(OP_TYPE::DELETE);
 
-  Page *page = FindLeafPage(key);
+  Page *page = FindLeafPageCrabbing(key, transaction, OP_TYPE::DELETE);
   LeafPage *leaf_page = reinterpret_cast<LeafPage *>(page->GetData());
 
-  const int old_size = leaf_page->GetSize();
   const int size = leaf_page->RemoveAndDeleteRecord(key, comparator_);
 
   if (size < leaf_page->GetMinSize()) {
     const bool shall_delete_leaf = CoalesceOrRedistribute(leaf_page, transaction);
 
     if (shall_delete_leaf) {
-      buffer_pool_manager_->DeletePage(leaf_page->GetPageId());
+      transaction->AddIntoDeletedPageSet(page->GetPageId());
     }
-
-  } else {
-    const bool is_dirty = (size < old_size);
-    buffer_pool_manager_->UnpinPage(leaf_page->GetPageId(), is_dirty);
   }
+
+  TryUnlatchRoot(OP_TYPE::DELETE);
+  FreeAllPages(transaction);
 }
 
 /*
@@ -326,7 +327,7 @@ bool BPLUSTREE_TYPE::CoalesceOrRedistribute(N *node, Transaction *transaction) {
   if (node->IsRootPage()) {
     const bool shall_delete_root = AdjustRoot(node);
     if (shall_delete_root && !node->IsLeafPage()) {
-      buffer_pool_manager_->DeletePage(node->GetPageId());
+      transaction->AddIntoDeletedPageSet(node->GetPageId());
     }
     return shall_delete_root && node->IsLeafPage();
   }
@@ -341,60 +342,51 @@ bool BPLUSTREE_TYPE::CoalesceOrRedistribute(N *node, Transaction *transaction) {
   const int left_sibling_index = node_index - 1;
   const int right_sibling_index = node_index + 1;
 
+  Page *left_sibling_page{nullptr};
+  Page *right_sibling_page{nullptr};
+
   N *left_sibling_node{nullptr};
   N *right_sibling_node{nullptr};
 
   if (left_sibling_index >= 0) {
     const page_id_t &left_sibling_page_id = parent_page->ValueAt(left_sibling_index);
-    Page *left_sibling_page = buffer_pool_manager_->FetchPage(left_sibling_page_id);
+    left_sibling_page = buffer_pool_manager_->FetchPage(left_sibling_page_id);
     if (left_sibling_page == nullptr) {
       THROW_OOM("FetchPage fail");
     }
+    LatchPage(left_sibling_page, OP_TYPE::DELETE);
+    transaction->AddIntoPageSet(left_sibling_page);
+
     left_sibling_node = reinterpret_cast<N *>(left_sibling_page->GetData());
   }
 
   if (right_sibling_index < parent_page->GetSize()) {
     const page_id_t &right_sibling_page_id = parent_page->ValueAt(right_sibling_index);
-    Page *right_sibling_page = buffer_pool_manager_->FetchPage(right_sibling_page_id);
+    right_sibling_page = buffer_pool_manager_->FetchPage(right_sibling_page_id);
     if (right_sibling_page == nullptr) {
       THROW_OOM("FetchPage fail");
     }
+    LatchPage(right_sibling_page, OP_TYPE::DELETE);
+    transaction->AddIntoPageSet(right_sibling_page);
+
     right_sibling_node = reinterpret_cast<N *>(right_sibling_page->GetData());
   }
 
   // first, try to coalesce with the left sibling.
   if (left_sibling_node != nullptr) {
     if (node->GetSize() + left_sibling_node->GetSize() < node->GetMaxSize()) {
-      if (right_sibling_node != nullptr) {
-        buffer_pool_manager_->UnpinPage(right_sibling_node->GetPageId(), false);
-      }
-
-      const bool shall_delete_parent = Coalesce(&left_sibling_node, &node, &parent_page, NODE_IS_RIGHT);
-
+      Coalesce(&left_sibling_node, &node, &parent_page, NODE_IS_RIGHT, transaction);
       buffer_pool_manager_->UnpinPage(parent_page->GetPageId(), true);
-      if (shall_delete_parent) {
-        buffer_pool_manager_->DeletePage(parent_page->GetPageId());
-      }
-
-      return true;
+      return node->IsLeafPage();
     }
   }
 
   //  If cannot, try to coalesce with the right sibling.
   if (right_sibling_node != nullptr) {
     if (node->GetSize() + right_sibling_node->GetSize() < node->GetMaxSize()) {
-      if (left_sibling_node != nullptr) {
-        buffer_pool_manager_->UnpinPage(left_sibling_node->GetPageId(), false);
-      }
-
-      const bool shall_delete_parent = Coalesce(&right_sibling_node, &node, &parent_page, NODE_IS_LEFT);
-
+      Coalesce(&right_sibling_node, &node, &parent_page, NODE_IS_LEFT, transaction);
       buffer_pool_manager_->UnpinPage(parent_page->GetPageId(), true);
-      if (shall_delete_parent) {
-        buffer_pool_manager_->DeletePage(parent_page->GetPageId());
-      }
-
-      return true;
+      return false;
     }
   }
 
@@ -402,18 +394,9 @@ bool BPLUSTREE_TYPE::CoalesceOrRedistribute(N *node, Transaction *transaction) {
 
   // if coalescing is impossible, try to redistribute with the left or the right sibling.
   if (left_sibling_node != nullptr && node->GetSize() + left_sibling_node->GetSize() >= node->GetMaxSize()) {
-    if (right_sibling_node != nullptr) {
-      buffer_pool_manager_->UnpinPage(right_sibling_node->GetPageId(), false);
-    }
-
     Redistribute(left_sibling_node, node, NODE_IS_RIGHT);
 
   } else {
-    assert(right_sibling_node != nullptr);
-    if (left_sibling_node != nullptr) {
-      buffer_pool_manager_->UnpinPage(left_sibling_node->GetPageId(), false);
-    }
-
     Redistribute(right_sibling_node, node, NODE_IS_LEFT);
   }
 
@@ -432,7 +415,7 @@ bool BPLUSTREE_TYPE::CoalesceOrRedistribute(N *node, Transaction *transaction) {
  * @return  true means parent node should be deleted, false means no deletion
  * happend
  */
-/// FIXME(bayes): why pass in pointer to pointer? For swapping the nodes?
+/// FIXME(bayes): why pass in pointer to pointer?
 INDEX_TEMPLATE_ARGUMENTS
 template <typename N>
 bool BPLUSTREE_TYPE::Coalesce(N **neighbor_node_, N **node_, InternalPage **parent_, int index,
@@ -460,15 +443,15 @@ bool BPLUSTREE_TYPE::Coalesce(N **neighbor_node_, N **node_, InternalPage **pare
     internal_node->MoveAllTo(neighbor_internal_node, mid_key, buffer_pool_manager_);
   }
 
-  buffer_pool_manager_->UnpinPage(neighbor_node->GetPageId(), true);
-  buffer_pool_manager_->UnpinPage(node->GetPageId(), true);
-  buffer_pool_manager_->DeletePage(node->GetPageId());
+  transaction->AddIntoDeletedPageSet(node->GetPageId());
 
   parent->Remove(node_index);
   const int size = parent->GetSize();
   if (size < parent->GetMinSize()) {
     const bool shall_delete_parent = CoalesceOrRedistribute(parent, transaction);
-    return shall_delete_parent;
+    if (shall_delete_parent) {
+      transaction->AddIntoDeletedPageSet(parent->GetPageId());
+    }
   }
 
   return false;
@@ -521,8 +504,6 @@ void BPLUSTREE_TYPE::Redistribute(N *neighbor_node, N *node, int index) {
     }
   }
 
-  buffer_pool_manager_->UnpinPage(node->GetPageId(), true);
-  buffer_pool_manager_->UnpinPage(neighbor_node->GetPageId(), true);
   buffer_pool_manager_->UnpinPage(parent->GetPageId(), true);
 }
 
@@ -665,24 +646,27 @@ void BPLUSTREE_TYPE::TryUnlatchRoot(const OP_TYPE &op_type) {
 }
 
 INDEX_TEMPLATE_ARGUMENTS
-void BPLUSTREE_TYPE::ReleaseAllPages(Transaction *transaction, const OP_TYPE &op_type) {
+void BPLUSTREE_TYPE::ReleaseAllPages(Transaction *transaction) {
   auto page_set = transaction->GetPageSet();
   for (Page *page : *page_set) {
-    UnlatchPage(page, op_type);
-    buffer_pool_manager_->UnpinPage(page->GetPageId(), op_type != OP_TYPE::READ);
+    UnlatchPage(page, OP_TYPE::INSERT);
+    buffer_pool_manager_->UnpinPage(page->GetPageId(), true);
   }
   page_set->clear();
 }
 
 INDEX_TEMPLATE_ARGUMENTS
-void BPLUSTREE_TYPE::FreeAllPages(Transaction *transaction, const OP_TYPE &op_type) {
+void BPLUSTREE_TYPE::FreeAllPages(Transaction *transaction) {
   auto page_set = transaction->GetPageSet();
   auto deleted_page_set = transaction->GetDeletedPageSet();
   for (Page *page : *page_set) {
-    UnlatchPage(page, op_type);
+    UnlatchPage(page, OP_TYPE::DELETE);
     const page_id_t &page_id = page->GetPageId();
-    buffer_pool_manager_->UnpinPage(page_id, op_type != OP_TYPE::READ);
+    buffer_pool_manager_->UnpinPage(page_id, true);
     if (deleted_page_set->count(page_id) > 0) {
+      if (page->GetPinCount() > 0) {
+        throw Exception(ExceptionType::INVALID, "GetPinCount exception");
+      }
       buffer_pool_manager_->DeletePage(page_id);
       deleted_page_set->erase(page_id);
     }
@@ -722,7 +706,7 @@ Page *BPLUSTREE_TYPE::FindLeafPageCrabbing(const KeyType &key, Transaction *tran
     } else {
       if (IsNodeSafe(node, op_type)) {
         TryUnlatchRoot(op_type);
-        ReleaseAllPages(transaction, op_type);
+        ReleaseAllPages(transaction);
       }
       transaction->AddIntoPageSet(child_page);
     }

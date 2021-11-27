@@ -28,8 +28,8 @@ void print_tree(const BPlusTree<GenericKey<8>, RID, GenericComparator<8>> &tree,
   bpm->UnpinPage(tree.root_page_id_, false);
 }
 
-TEST(BPlusTreeTests, DISABLED_InsertDeleteTest) {
-  // TEST(BPlusTreeTests, InsertDeleteTest) {
+// TEST(BPlusTreeTests, DISABLED_InsertDeleteTest) {
+TEST(BPlusTreeTests, InsertDeleteTest) {
   // create KeyComparator and index schema
   Schema *key_schema = ParseCreateStatement("a bigint");
   GenericComparator<8> comparator(key_schema);
@@ -48,8 +48,8 @@ TEST(BPlusTreeTests, DISABLED_InsertDeleteTest) {
   auto header_page = bpm->NewPage(&page_id);
   (void)header_page;
 
-  const int64_t max_key = 100;
-  for (int64_t key = 1; key < 100; ++key) {
+  const int64_t max_key = 1000;
+  for (int64_t key = 1; key < max_key; ++key) {
     int64_t value = key & 0xFFFFFFFF;
     rid.Set(static_cast<int32_t>(key >> 32), value);
     index_key.SetFromInteger(key);
@@ -57,7 +57,7 @@ TEST(BPlusTreeTests, DISABLED_InsertDeleteTest) {
   }
 
   std::vector<RID> rids;
-  for (int64_t key = 1; key < 100; ++key) {
+  for (int64_t key = 1; key < max_key; ++key) {
     rids.clear();
     index_key.SetFromInteger(key);
     tree.GetValue(index_key, &rids);
@@ -98,6 +98,7 @@ TEST(BPlusTreeTests, DISABLED_InsertDeleteTest) {
  * Description: The same test that has been run for checkpoint 1,
  * but added iterator for value checking
  */
+// TEST(BPlusTreeTests, DISABLED_InsertTest1) {
 TEST(BPlusTreeTests, InsertTest1) {
   // create KeyComparator and index schema
   Schema *key_schema = ParseCreateStatement("a bigint");
@@ -161,6 +162,7 @@ TEST(BPlusTreeTests, InsertTest1) {
  * Description: The same test that has been run for checkpoint 1
  * but added iterator for value checking
  */
+// TEST(BPlusTreeTests, DISABLED_InsertTest2) {
 TEST(BPlusTreeTests, InsertTest2) {
   // create KeyComparator and index schema
   Schema *key_schema = ParseCreateStatement("a bigint");
@@ -235,6 +237,7 @@ TEST(BPlusTreeTests, InsertTest2) {
  * check the the inserted keys. Then delete a subset of the keys.
  * Finally use the iterator to check the remained keys.
  */
+// TEST(BPlusTreeTests, DISABLED_DeleteTest1) {
 TEST(BPlusTreeTests, DeleteTest1) {
   // create KeyComparator and index schema
   std::string createStmt = "a bigint";
@@ -318,6 +321,7 @@ TEST(BPlusTreeTests, DeleteTest1) {
  * Description: Similar to DeleteTest2, except that, during the Remove step,
  * a different subset of keys are removed.
  */
+// TEST(BPlusTreeTests, DISABLED_DeleteTest2) {
 TEST(BPlusTreeTests, DeleteTest2) {
   // create KeyComparator and index schema
   Schema *key_schema = ParseCreateStatement("a bigint");

@@ -106,8 +106,8 @@ class BPlusTree {
 
   void LatchRoot(const OP_TYPE &op_type);
   void TryUnlatchRoot(const OP_TYPE &op_type);
-  void ReleaseAllPages(Transaction *transaction, const OP_TYPE &op_type);
-  void FreeAllPages(Transaction *transaction, const OP_TYPE &op_type);
+  void ReleaseAllPages(Transaction *transaction);
+  void FreeAllPages(Transaction *transaction);
   Page *FindLeafPageCrabbing(const KeyType &key, Transaction *transaction, const OP_TYPE &op_type);
 
   void UpdateRootPageId(int insert_record = 0);
