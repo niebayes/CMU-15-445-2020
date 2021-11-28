@@ -232,7 +232,6 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::MoveAllTo(BPlusTreeInternalPage *recipient,
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_INTERNAL_PAGE_TYPE::MoveFirstToEndOf(BPlusTreeInternalPage *recipient, const KeyType &middle_key,
                                                       BufferPoolManager *buffer_pool_manager) {
-  /// FIXME(bayes): The logic seems broken.
   MappingType item{middle_key, ValueAt(0)};
   Remove(0);
   recipient->CopyLastFrom(item, buffer_pool_manager);
@@ -276,7 +275,6 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::MoveLastToFrontOf(BPlusTreeInternalPage *re
  */
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_INTERNAL_PAGE_TYPE::CopyFirstFrom(const MappingType &item, BufferPoolManager *buffer_pool_manager) {
-  /// FIXME(bayes): The logic is broken.
   for (int i = GetSize(); i > 1; --i) {
     array_[i] = array_[i - 1];
   }

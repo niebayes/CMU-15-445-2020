@@ -96,7 +96,7 @@ const MappingType &B_PLUS_TREE_LEAF_PAGE_TYPE::GetItem(int index) { return array
 INDEX_TEMPLATE_ARGUMENTS
 bool B_PLUS_TREE_LEAF_PAGE_TYPE::Lookup(const KeyType &key, ValueType *value, const KeyComparator &comparator) const {
   const int pos = LowerBound(key, comparator);
-  if (comparator(KeyAt(pos), key) != 0) {
+  if (pos >= GetSize() || comparator(KeyAt(pos), key) != 0) {
     return false;
   }
   *value = array_[pos].second;
