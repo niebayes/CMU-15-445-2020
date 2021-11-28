@@ -161,7 +161,7 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::CopyNFrom(MappingType *items, int size) {
 INDEX_TEMPLATE_ARGUMENTS
 int B_PLUS_TREE_LEAF_PAGE_TYPE::RemoveAndDeleteRecord(const KeyType &key, const KeyComparator &comparator) {
   const int pos = LowerBound(key, comparator);
-  if (comparator(KeyAt(pos), key) != 0) {
+  if (pos >= GetSize() || comparator(KeyAt(pos), key) != 0) {
     return GetSize();
   }
   for (int i = pos; i < GetSize() - 1; ++i) {

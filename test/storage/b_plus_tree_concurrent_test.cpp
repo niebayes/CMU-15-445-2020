@@ -24,7 +24,7 @@ void print_tree(const BPlusTree<GenericKey<8>, RID, GenericComparator<8>> &tree,
 
 // helper function to launch multiple threads
 template <typename... Args>
-void LaunchParallelTest(uint64_t num_threads, Args &&...args) {
+void LaunchParallelTest(uint64_t num_threads, Args &&... args) {
   std::vector<std::thread> thread_group;
 
   // Launch a group of threads
@@ -209,8 +209,8 @@ TEST(BPlusTreeConcurrentTest, InsertTest2) {
   remove("test.log");
 }
 
-TEST(BPlusTreeConcurrentTest, DISABLED_DeleteTest1) {
-// TEST(BPlusTreeConcurrentTest, DeleteTest1) {
+// TEST(BPlusTreeConcurrentTest, DISABLED_DeleteTest1) {
+TEST(BPlusTreeConcurrentTest, DeleteTest1) {
   // create KeyComparator and index schema
   Schema *key_schema = ParseCreateStatement("a bigint");
   GenericComparator<8> comparator(key_schema);
@@ -230,7 +230,7 @@ TEST(BPlusTreeConcurrentTest, DISABLED_DeleteTest1) {
 
   print_tree(tree, bpm);
 
-  std::vector<int64_t> remove_keys = {1, 5, 3, 4};
+  std::vector<int64_t> remove_keys = {1, 5, 4, 3};
   LaunchParallelTest(2, DeleteHelper, &tree, remove_keys);
 
   print_tree(tree, bpm);
