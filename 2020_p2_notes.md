@@ -83,3 +83,6 @@ iterator 内部维护 leaf page 和 index，用以指向下一个要访问的 re
 - coalesce 和 redistribute 都需要对 sibling 加锁。
 - 在 sequential 中采用的 unpin 策略，需要修改。因为 unpin 操作必须在 unlatch 操作之后，而很多 pages 的 unlatch 操作都被 defer 到 WRITE 操作的末尾处执行。故 unpin 也应该 defer 到此时进行。对于非 crabbing 阶段 fetch 的 pages，可以在使用完毕后，立即 unpin，因为它们已经被锁住了，且 pin count > 1.
 - 同样地，delete page 策略也需要修改。从给出的函数注释中可以看出，很多函数的 return value 说明了其传入的某个 page 是否需要在函数结束后删除。在 concurrent 版本中，可以忽略这些说明，而仅在真正删除 page 的时候，将 page 添加至 deleted page set 中，再在 WRITE 操作的末尾处统一删除。
+
+### Optimistic optimization (optional)
+实现一个新函数 FindLeafPageOptimistic，主要逻辑参考 lecture。当判断 leaf node 安全时，直接返回 leaf node。如果不安全，解除 leaf node 的写锁并 unpin，再递归调用 FindLeafPageCrabbing。加上该优化后，平均时间（3次提交平均值）从 5.0s 降低到 4.0s。
