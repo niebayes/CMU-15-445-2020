@@ -109,6 +109,7 @@ class BPlusTree {
   void ReleaseAllPages(Transaction *transaction);
   void FreeAllPages(Transaction *transaction);
   Page *FindLeafPageCrabbing(const KeyType &key, Transaction *transaction, const OP_TYPE &op_type);
+  Page *FindLeafPageOptimistic(const KeyType &key, Transaction *transaction);
 
   void UpdateRootPageId(int insert_record = 0);
 

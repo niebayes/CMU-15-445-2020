@@ -44,7 +44,15 @@ bool IsNodeSafe(BPlusTreePage *node, const OP_TYPE &op_type) {
   if (op_type == OP_TYPE::INSERT) {
     is_safe = (node->GetSize() < node->GetMaxSize() - 1);
   } else if (op_type == OP_TYPE::DELETE) {
-    is_safe = (node->GetSize() > node->GetMinSize());
+    if (!node->IsRootPage()) {
+      is_safe = (node->GetSize() > node->GetMinSize());
+    } else {
+      if (node->IsLeafPage()) {
+        is_safe = node->GetSize() > 1;
+      } else {
+        is_safe = node->GetSize() > 2;
+      }
+    }
   }
   return is_safe;
 }
@@ -86,6 +94,9 @@ bool BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result
   TryUnlatchRoot(OP_TYPE::READ);
 
   Page *page = FindLeafPageCrabbing(key, transaction, OP_TYPE::READ);
+  if (page == nullptr) {
+    return false;
+  }
   LeafPage *leaf_page = reinterpret_cast<LeafPage *>(page->GetData());
 
   ValueType value;
@@ -160,25 +171,46 @@ void BPLUSTREE_TYPE::StartNewTree(const KeyType &key, const ValueType &value) {
  */
 INDEX_TEMPLATE_ARGUMENTS
 bool BPLUSTREE_TYPE::InsertIntoLeaf(const KeyType &key, const ValueType &value, Transaction *transaction) {
-  Page *page = FindLeafPageCrabbing(key, transaction, OP_TYPE::INSERT);
+  Page *page = FindLeafPageOptimistic(key, transaction);
   if (page == nullptr) {
     return false;
   }
   LeafPage *leaf_page = reinterpret_cast<LeafPage *>(page->GetData());
+
+  bool is_safe{true};
+  if (!IsNodeSafe(leaf_page, OP_TYPE::INSERT)) {
+    is_safe = false;
+    TryUnlatchRoot(OP_TYPE::READ);
+    page->WUnlatch();
+    buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
+
+    page = FindLeafPageCrabbing(key, transaction, OP_TYPE::INSERT);
+    if (page == nullptr) {
+      return false;
+    }
+    leaf_page = reinterpret_cast<LeafPage *>(page->GetData());
+  }
 
   const int old_size = leaf_page->GetSize();
   const int size = leaf_page->Insert(key, value, comparator_);
   const bool is_dirty = (size > old_size);
 
   if (size == leaf_page->GetMaxSize()) {
+    assert(!is_safe);
     LeafPage *split_leaf_page = Split(leaf_page);
 
     const KeyType &mid_key = split_leaf_page->KeyAt(0);
     InsertIntoParent(leaf_page, mid_key, split_leaf_page);
   }
 
-  TryUnlatchRoot(OP_TYPE::INSERT);
-  ReleaseAllPages(transaction);
+  if (is_safe) {
+    TryUnlatchRoot(OP_TYPE::READ);
+    page->WUnlatch();
+    buffer_pool_manager_->UnpinPage(page->GetPageId(), true);
+  } else {
+    TryUnlatchRoot(OP_TYPE::INSERT);
+    ReleaseAllPages(transaction);
+  }
 
   return is_dirty;
 }
@@ -287,20 +319,42 @@ void BPLUSTREE_TYPE::InsertIntoParent(BPlusTreePage *old_node, const KeyType &ke
  */
 INDEX_TEMPLATE_ARGUMENTS
 void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
-  Page *page = FindLeafPageCrabbing(key, transaction, OP_TYPE::DELETE);
+  Page *page = FindLeafPageOptimistic(key, transaction);
   if (page == nullptr) {
     return;
   }
   LeafPage *leaf_page = reinterpret_cast<LeafPage *>(page->GetData());
 
+  bool is_safe{true};
+  if (!IsNodeSafe(leaf_page, OP_TYPE::DELETE)) {
+    is_safe = false;
+    TryUnlatchRoot(OP_TYPE::READ);
+    page->WUnlatch();
+    buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
+
+    page = FindLeafPageCrabbing(key, transaction, OP_TYPE::DELETE);
+    if (page == nullptr) {
+      return;
+    }
+    leaf_page = reinterpret_cast<LeafPage *>(page->GetData());
+  }
+
+  const int old_size = leaf_page->GetSize();
   const int size = leaf_page->RemoveAndDeleteRecord(key, comparator_);
 
   if (size < leaf_page->GetMinSize()) {
     CoalesceOrRedistribute(leaf_page, transaction);
   }
 
-  TryUnlatchRoot(OP_TYPE::DELETE);
-  FreeAllPages(transaction);
+  if (is_safe) {
+    TryUnlatchRoot(OP_TYPE::READ);
+    page->WUnlatch();
+    const bool is_dirty = (size < old_size);
+    buffer_pool_manager_->UnpinPage(page->GetPageId(), is_dirty);
+  } else {
+    TryUnlatchRoot(OP_TYPE::DELETE);
+    FreeAllPages(transaction);
+  }
 }
 
 /*
@@ -700,6 +754,49 @@ Page *BPLUSTREE_TYPE::FindLeafPageCrabbing(const KeyType &key, Transaction *tran
 
     page = child_page;
   }
+  return page;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+Page *BPLUSTREE_TYPE::FindLeafPageOptimistic(const KeyType &key, Transaction *transaction) {
+  LatchRoot(OP_TYPE::READ);
+  if (IsEmpty()) {
+    TryUnlatchRoot(OP_TYPE::READ);
+    return nullptr;
+  }
+
+  Page *page = buffer_pool_manager_->FetchPage(root_page_id_);
+  if (page == nullptr) {
+    THROW_OOM("FetchPage fail");
+  }
+  BPlusTreePage *node = reinterpret_cast<BPlusTreePage *>(page->GetData());
+  if (!node->IsLeafPage()) {
+    page->RLatch();
+  } else {
+    page->WLatch();
+  }
+
+  while (!node->IsLeafPage()) {
+    const page_id_t child_page_id = reinterpret_cast<InternalPage *>(node)->Lookup(key, comparator_);
+    Page *child_page = buffer_pool_manager_->FetchPage(child_page_id);
+    if (child_page == nullptr) {
+      THROW_OOM("FetchPage fail");
+    }
+    node = reinterpret_cast<BPlusTreePage *>(child_page->GetData());
+
+    if (!node->IsLeafPage()) {
+      child_page->RLatch();
+    } else {
+      child_page->WLatch();
+    }
+
+    TryUnlatchRoot(OP_TYPE::READ);
+    page->RUnlatch();
+    buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
+
+    page = child_page;
+  }
+
   return page;
 }
 
